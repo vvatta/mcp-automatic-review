@@ -39,7 +39,7 @@ class SandboxConfig(BaseModel):
     }
 
 
-class TriviConfig(BaseModel):
+class TrivyConfig(BaseModel):
     """Configuration for Trivy scanner."""
     
     severity_levels: list[str] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
