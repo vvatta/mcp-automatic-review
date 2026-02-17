@@ -1,0 +1,128 @@
+name: MCP Malware Sandbox CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  security-scan:
+    name: Security Scan MCP Server
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Trivy
+        run: |
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install trivy
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Run static scan
+        run: |
+          python -m src.cli scan .
+      
+      - name: Run tests
+        run: |
+          pip install pytest pytest-asyncio
+          pytest tests/ -v
+      
+      - name: Upload scan results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports
+          path: reports/
+  
+  full-sandbox-analysis:
+    name: Full Sandbox Analysis
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Install Trivy
+        run: |
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install trivy
+      
+      - name: Build sandbox image
+        run: |
+          python -m src.cli build
+      
+      - name: Run full analysis
+        run: |
+          python -m src.cli analyze . --output ci-report.json
+        continue-on-error: true
+      
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: full-analysis-report
+          path: |
+            reports/
+            ci-report.json
+      
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            
+            try {
+              const report = JSON.parse(fs.readFileSync('reports/sandbox_result.json', 'utf8'));
+              
+              const comment = `## 🔒 Security Scan Results
+              
+              **Risk Score:** ${report.overall_risk_score}/100
+              **Status:** ${report.status}
+              
+              ### Recommendations
+              ${report.recommendations.map(r => `- ${r}`).join('\n')}
+              
+              ### Summary
+              - **Vulnerabilities:** ${report.scan_summary ? report.scan_summary.total : 'N/A'}
+              - **Fuzzing Tests:** ${report.fuzzing_summary ? report.fuzzing_summary.total_tests : 'N/A'}
+              - **Data Leaks:** ${report.fuzzing_summary ? report.fuzzing_summary.leaked_data : 'N/A'}
+              
+              Full reports available in artifacts.
+              `;
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            } catch (error) {
+              console.log('Could not read report file');
+            }
