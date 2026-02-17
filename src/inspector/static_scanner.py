@@ -110,7 +110,6 @@ class StaticScanner:
 
         results = trivy_data.get("Results", [])
         for result in results:
-            result.get("Target", "unknown")
             vulns = result.get("Vulnerabilities", [])
 
             for vuln in vulns:

@@ -107,7 +107,6 @@ class GitHubSource(MCPSource):
         stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
-            stderr.decode() if stderr else "Unknown error"
             raise subprocess.CalledProcessError(
                 process.returncode, clone_cmd, output=stdout, stderr=stderr
             )
