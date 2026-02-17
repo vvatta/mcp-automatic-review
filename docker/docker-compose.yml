@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  mcp-sandbox:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.sandbox
+    runtime: runsc  # gVisor runtime
+    container_name: mcp-malware-sandbox
+    networks:
+      - sandbox-network
+    volumes:
+      - sandbox-logs:/var/log/sandbox
+      - ./network-monitor:/network-monitor
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/tmp
+    environment:
+      - PYTHONUNBUFFERED=1
+      - SANDBOX_MODE=true
+      - HOME=/tmp/fake_home
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  network-monitor:
+    image: nicolaka/netshoot
+    container_name: mcp-network-monitor
+    network_mode: "service:mcp-sandbox"
+    command: >
+      sh -c "tcpdump -i any -w /network-monitor/capture.pcap &
+             while true; do
+               netstat -tunap > /network-monitor/connections.log 2>&1;
+               sleep 5;
+             done"
+    volumes:
+      - ./network-monitor:/network-monitor
+    privileged: true
+
+  trivy-scanner:
+    image: aquasec/trivy:latest
+    container_name: mcp-trivy-scanner
+    volumes:
+      - ..:/workspace
+      - trivy-cache:/root/.cache/trivy
+    command: fs --format json --output /workspace/reports/trivy-report.json /workspace
+    profiles:
+      - scanner
+
+networks:
+  sandbox-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+    driver_opts:
+      com.docker.network.bridge.name: mcp-sandbox-br
+
+volumes:
+  sandbox-logs:
+  trivy-cache:
