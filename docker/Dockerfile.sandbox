@@ -1,0 +1,52 @@
+# Use gVisor-compatible base image
+FROM python:3.11-slim
+
+# Install security and monitoring tools
+RUN apt-get update && apt-get install -y \
+    tcpdump \
+    iptables \
+    strace \
+    net-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create sandbox user (non-root)
+RUN useradd -m -s /bin/bash sandbox
+
+# Create fake home directory with decoy files
+RUN mkdir -p /tmp/fake_home/.ssh && \
+    echo "-----BEGIN OPENSSH PRIVATE KEY-----" > /tmp/fake_home/.ssh/id_rsa && \
+    echo "DECOY_KEY_DO_NOT_USE" >> /tmp/fake_home/.ssh/id_rsa && \
+    echo "-----END OPENSSH PRIVATE KEY-----" >> /tmp/fake_home/.ssh/id_rsa && \
+    chmod 600 /tmp/fake_home/.ssh/id_rsa
+
+# Create decoy .env file
+RUN echo "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE" > /tmp/fake_home/.env && \
+    echo "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" >> /tmp/fake_home/.env && \
+    echo "DATABASE_URL=postgresql://admin:password123@localhost:5432/prod" >> /tmp/fake_home/.env && \
+    echo "API_TOKEN=sk-1234567890abcdef" >> /tmp/fake_home/.env
+
+# Create decoy config files
+RUN mkdir -p /tmp/fake_home/.aws && \
+    echo "[default]" > /tmp/fake_home/.aws/credentials && \
+    echo "aws_access_key_id = AKIAIOSFODNN7EXAMPLE" >> /tmp/fake_home/.aws/credentials && \
+    echo "aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" >> /tmp/fake_home/.aws/credentials
+
+# Set ownership
+RUN chown -R sandbox:sandbox /tmp/fake_home
+
+# Install Python dependencies
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY . .
+
+# Switch to sandbox user
+USER sandbox
+
+# Expose port for MCP server
+EXPOSE 8000
+
+# Default command
+CMD ["python", "-m", "src.orchestrator.main"]
