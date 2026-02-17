@@ -4,6 +4,7 @@ Coordinates all phases: isolation, inspection, interrogation, and monitoring.
 """
 import asyncio
 import json
+import tempfile
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -18,6 +19,8 @@ from rich.panel import Panel
 from src.inspector.static_scanner import StaticScanner, ScanResult
 from src.interrogator.llm_fuzzer import MCPInterrogator, FuzzResult
 from src.monitor.behavior_monitor import BehaviorMonitor, BehaviorReport
+from src.installer.mcp_source import MCPSource
+from src.installer.source_factory import MCPSourceFactory
 
 console = Console()
 
@@ -51,7 +54,7 @@ class MCPSandboxOrchestrator:
     Main orchestrator for MCP malware sandbox.
     
     Workflow:
-    1. Ingest - Load MCP server code
+    1. Ingest - Load/fetch MCP server from source (local, GitHub, npm, PyPI)
     2. Inspect - Static analysis with Trivy
     3. Isolate - Launch in Docker + gVisor
     4. Monitor - eBPF and telemetry
@@ -61,16 +64,41 @@ class MCPSandboxOrchestrator:
 
     def __init__(
         self,
-        workspace_path: str,
+        source_reference: str,
         mcp_server_url: Optional[str] = None,
-        anthropic_api_key: Optional[str] = None
+        anthropic_api_key: Optional[str] = None,
+        source_type: Optional[str] = None,
+        version: Optional[str] = None,
+        ref: Optional[str] = None
     ):
-        self.workspace_path = Path(workspace_path)
+        """
+        Initialize MCP Sandbox Orchestrator.
+        
+        Args:
+            source_reference: MCP source (local path, GitHub URL, npm/pypi package)
+            mcp_server_url: URL of running MCP server (for live testing)
+            anthropic_api_key: API key for LLM fuzzing
+            source_type: Explicit source type (local, github, npm, pypi)
+            version: Version specification for package sources
+            ref: Git reference (branch/tag/commit) for GitHub sources
+        """
+        self.source_reference = source_reference
         self.mcp_server_url = mcp_server_url or "http://localhost:8000"
         self.anthropic_api_key = anthropic_api_key
         
-        # Initialize components
-        self.scanner = StaticScanner(str(self.workspace_path))
+        # Create MCP source
+        self.mcp_source = MCPSourceFactory.create_source(
+            reference=source_reference,
+            source_type=source_type,
+            version=version,
+            ref=ref
+        )
+        
+        # Workspace will be set after fetch
+        self.workspace_path: Optional[Path] = None
+        self.temp_dir: Optional[tempfile.TemporaryDirectory] = None
+        
+        # Initialize Docker client
         self.docker_client = docker.from_env()
         
         # Results
@@ -94,6 +122,10 @@ class MCPSandboxOrchestrator:
         ))
         
         try:
+            # Phase 0: Fetch MCP Source
+            console.print("\n[bold]Phase 0: Fetching MCP Source[/bold]")
+            await self._fetch_mcp_source()
+            
             # Phase 1: Static Analysis
             console.print("\n[bold]Phase 1: Static & Dependency Analysis[/bold]")
             self.scan_result = await self._run_static_analysis()
@@ -135,15 +167,55 @@ class MCPSandboxOrchestrator:
         except Exception as e:
             console.print(f"[red]Fatal error: {e}[/red]")
             return self._create_failed_result(str(e), time.time() - start_time)
+        finally:
+            # Cleanup source if needed
+            self._cleanup_source()
+
+    async def _fetch_mcp_source(self) -> None:
+        """Fetch and install MCP source to workspace."""
+        console.print(f"[blue]Source: {self.source_reference}[/blue]")
+        console.print(f"[blue]Type: {self.mcp_source.config.source_type.value}[/blue]")
+        
+        # Validate source
+        if not self.mcp_source.validate():
+            raise ValueError(f"Invalid MCP source: {self.source_reference}")
+        
+        # For non-local sources, create temporary directory
+        if self.mcp_source.config.source_type.value != "local":
+            self.temp_dir = tempfile.TemporaryDirectory(prefix="mcp-sandbox-")
+            target_dir = Path(self.temp_dir.name)
+        else:
+            target_dir = Path.cwd()  # Not used for local sources
+        
+        # Fetch and install
+        console.print("[blue]Fetching MCP source...[/blue]")
+        self.workspace_path = await self.mcp_source.fetch_and_install(target_dir)
+        console.print(f"[green]✓ MCP source ready at: {self.workspace_path}[/green]")
+    
+    def _cleanup_source(self) -> None:
+        """Cleanup temporary source files."""
+        try:
+            # For non-local sources, cleanup
+            if self.mcp_source.config.source_type.value != "local":
+                self.mcp_source.cleanup()
+            
+            # Cleanup temp directory
+            if self.temp_dir:
+                self.temp_dir.cleanup()
+        except Exception as e:
+            console.print(f"[yellow]Cleanup warning: {e}[/yellow]")
 
     async def _run_static_analysis(self) -> Optional[ScanResult]:
-        """Run Phase 2: Static & Dependency Analysis."""
+        """Run Phase 1: Static & Dependency Analysis."""
+        
+        # Initialize scanner with workspace path
+        scanner = StaticScanner(str(self.workspace_path))
         
         # Run Trivy scan
-        scan_result = self.scanner.scan_with_trivy()
+        scan_result = scanner.scan_with_trivy()
         
         # Check permissions
-        permissions = self.scanner.check_permissions_manifest()
+        permissions = scanner.check_permissions_manifest()
         
         if permissions.get("dangerous_permissions"):
             console.print("[yellow]⚠ Dangerous permissions detected:[/yellow]")
@@ -151,7 +223,7 @@ class MCPSandboxOrchestrator:
                 console.print(f"  - {perm}")
         
         # Generate SBOM
-        sbom = self.scanner.generate_sbom()
+        sbom = scanner.generate_sbom()
         
         if scan_result:
             console.print(f"\n[bold]Vulnerability Summary:[/bold]")
