@@ -46,8 +46,10 @@ jobs:
       - name: Test MCP CLI
         run: |
           set -e
-          python -m src.cli version | grep "MCP Malware Sandbox"
-          python -m src.cli --help | grep "Commands"
+          python -m src.cli version | grep -q "Version: 0.1.0"
+          python -m src.cli --help | grep -q "analyze"
+          python -m src.cli --help | grep -q "scan"
+          echo "✓ MCP CLI tests passed"
       
       - name: Upload scan results
         uses: actions/upload-artifact@v4
