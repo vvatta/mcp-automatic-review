@@ -6,7 +6,19 @@ A comprehensive security sandbox for analyzing MCP (Model Context Protocol) serv
 
 The MCP Malware Sandbox treats untrusted MCP servers exactly like suspicious software: it doesn't trust their claims, isolates their environment, and records every move they make.
 
+**New in this version**: The sandbox now supports fetching and analyzing MCP servers from multiple sources:
+- 📁 **Local filesystem** - Analyze MCP servers already on disk
+- 🐙 **GitHub repositories** - Clone and analyze from GitHub
+- 📦 **npm registry** - Install and analyze npm packages
+- 🐍 **PyPI registry** - Install and analyze Python packages
+
 ## 🏗️ Architecture
+
+### Phase 0: Source Ingestion (NEW)
+- **Source Detection**: Auto-detect source type from reference string
+- **GitHub Integration**: Clone repositories with branch/tag/commit support
+- **Registry Support**: Install from npm and PyPI registries
+- **Temporary Workspaces**: Automatic cleanup of downloaded sources
 
 ### Phase 1: Isolation Engine (The "Detonation" Chamber)
 - **Runtime**: Docker with gVisor runtime (runsc) for kernel-level isolation
@@ -65,10 +77,23 @@ python -m src.cli build
 
 ### Quick Start
 
-Analyze an MCP server workspace:
+The MCP scanner now supports multiple source types:
 
 ```bash
+# Analyze local MCP server
 python -m src.cli analyze /path/to/mcp-server
+
+# Analyze from GitHub repository
+python -m src.cli analyze https://github.com/owner/repo
+python -m src.cli analyze owner/repo --ref main
+
+# Analyze from npm registry
+python -m src.cli analyze npm:package-name
+python -m src.cli analyze package-name@1.0.0
+
+# Analyze from PyPI registry
+python -m src.cli analyze pypi:package-name
+python -m src.cli analyze package-name==1.0.0
 ```
 
 ### Advanced Usage
@@ -80,7 +105,22 @@ python -m src.cli analyze /path/to/mcp-server \
     --anthropic-key YOUR_API_KEY \
     --output results.json
 
-# Run static analysis only
+# Analyze GitHub repo with specific branch
+python -m src.cli analyze https://github.com/owner/repo \
+    --ref develop \
+    --anthropic-key YOUR_API_KEY
+
+# Analyze npm package with version
+python -m src.cli analyze npm:@modelcontextprotocol/server-example \
+    --version "1.0.0" \
+    --output npm-analysis.json
+
+# Explicitly specify source type
+python -m src.cli analyze my-package \
+    --source-type npm \
+    --version "latest"
+
+# Run static analysis only (backward compatible)
 python -m src.cli scan /path/to/mcp-server
 
 # Check version
@@ -103,6 +143,64 @@ docker-compose logs -f
 # Stop and cleanup
 docker-compose down
 ```
+
+## 📦 Supported MCP Sources
+
+The sandbox supports analyzing MCP servers from multiple sources:
+
+### Local Filesystem
+- **Format**: `/path/to/mcp-server` or `./relative/path`
+- **Use case**: Analyze MCP servers already cloned or downloaded
+- **Example**: `python -m src.cli analyze /home/user/my-mcp-server`
+
+### GitHub Repositories
+- **Format**: `https://github.com/owner/repo` or `owner/repo`
+- **Features**: 
+  - Clone public/private repositories
+  - Specify branch, tag, or commit with `--ref`
+  - Automatic dependency installation (npm/pip)
+- **Examples**:
+  ```bash
+  python -m src.cli analyze https://github.com/modelcontextprotocol/servers
+  python -m src.cli analyze modelcontextprotocol/servers --ref main
+  python -m src.cli analyze owner/repo --ref v1.0.0
+  ```
+
+### npm Registry
+- **Format**: `npm:package-name` or `package-name@version`
+- **Features**:
+  - Install from public npm registry
+  - Support version specifications
+  - Automatic dependency installation
+- **Examples**:
+  ```bash
+  python -m src.cli analyze npm:@modelcontextprotocol/server-filesystem
+  python -m src.cli analyze my-mcp-package@1.2.3
+  python -m src.cli analyze my-package --source-type npm --version "^1.0.0"
+  ```
+
+### PyPI Registry
+- **Format**: `pypi:package-name` or `package-name==version`
+- **Features**:
+  - Install from Python Package Index
+  - Support version specifications (==, >=, <=, etc.)
+  - Isolated installation with pip
+- **Examples**:
+  ```bash
+  python -m src.cli analyze pypi:mcp-server-example
+  python -m src.cli analyze my-mcp-package==1.0.0
+  python -m src.cli analyze my-package --source-type pypi --version ">=1.0.0"
+  ```
+
+### Auto-detection
+
+The sandbox automatically detects source types based on the reference format:
+- Paths starting with `/`, `./`, or `../` → Local
+- URLs with `github.com` → GitHub
+- Format `owner/repo` (if not local path) → GitHub
+- Prefix `npm:` or contains `@version` → npm
+- Prefix `pypi:` or contains version operators → PyPI
+- Explicit `--source-type` parameter overrides auto-detection
 
 ## 📊 Output
 
