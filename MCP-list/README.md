@@ -59,6 +59,20 @@ After the workflow runs, test results will be:
    - `report.md` - Human-readable report
    - `vulnerabilities.json` - Security scan results
 
+## Validating Configuration
+
+Before opening a PR, you can validate your configuration file:
+
+```bash
+# Validate a specific config
+python scripts/validate_config.py MCP-list/your-mcp-name/config.txt
+
+# Validate all configs
+python scripts/validate_config.py
+```
+
+This will check that your `config.txt` has the required fields and proper format.
+
 ## Example
 
 See `MCP-list/example-mcp/` for a sample configuration.

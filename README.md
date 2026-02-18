@@ -1,5 +1,8 @@
 # MCP Malware Sandbox
 
+[![MCP Automated Testing](https://github.com/vvatta/mcp-automatic-review/actions/workflows/mcp-testing.yml/badge.svg)](https://github.com/vvatta/mcp-automatic-review/actions/workflows/mcp-testing.yml)
+[![Security Scan](https://github.com/vvatta/mcp-automatic-review/actions/workflows/security-scan.yml/badge.svg)](https://github.com/vvatta/mcp-automatic-review/actions/workflows/security-scan.yml)
+
 A comprehensive security sandbox for analyzing MCP (Model Context Protocol) servers with layered architecture for static inspection, isolated dynamic execution, and behavioral auditing.
 
 ## 🎯 Overview
