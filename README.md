@@ -11,6 +11,7 @@ The MCP Malware Sandbox treats untrusted MCP servers exactly like suspicious sof
 - 🐙 **GitHub repositories** - Clone and analyze from GitHub
 - 📦 **npm registry** - Install and analyze npm packages
 - 🐍 **PyPI registry** - Install and analyze Python packages
+- 🤖 **GitHub Actions Integration** - Automated testing via Pull Requests (see [MCP-list/README.md](MCP-list/README.md))
 
 ## 🏗️ Architecture
 
@@ -126,6 +127,30 @@ python -m src.cli scan /path/to/mcp-server
 # Check version
 python -m src.cli version
 ```
+
+### Automated Testing via GitHub Actions
+
+You can automate MCP testing by opening a Pull Request with a configuration file:
+
+```bash
+# 1. Create a folder for your MCP in MCP-list/
+mkdir -p MCP-list/my-mcp
+
+# 2. Create a config.txt file with your MCP details
+cat > MCP-list/my-mcp/config.txt << 'EOF'
+source: modelcontextprotocol/servers
+ref: main
+EOF
+
+# 3. Open a Pull Request
+# The GitHub Actions workflow will automatically:
+#   - Detect your MCP configuration
+#   - Run comprehensive security analysis
+#   - Update PR description with results
+#   - Commit test results back to your MCP folder
+```
+
+See [MCP-list/README.md](MCP-list/README.md) for detailed instructions on automated testing.
 
 ### Using Docker Compose
 

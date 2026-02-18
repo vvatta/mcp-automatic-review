@@ -1,0 +1,27 @@
+# MCP Testing Configuration
+# This file defines which MCP to test
+
+# Source of the MCP (can be: local path, GitHub URL, npm package, or PyPI package)
+# Examples:
+#   - GitHub: https://github.com/owner/repo or owner/repo
+#   - npm: npm:package-name or package-name@version
+#   - PyPI: pypi:package-name or package-name==version
+#   - Local: /path/to/mcp-server
+source: modelcontextprotocol/servers
+
+# Optional: Git reference (branch, tag, or commit) for GitHub sources
+ref: main
+
+# Optional: Version for npm/PyPI packages
+# version: 1.0.0
+
+# Optional: Source type (local, github, npm, pypi)
+# If not specified, it will be auto-detected
+# source_type: github
+
+# Optional: Anthropic API key for LLM fuzzing
+# Can also be set as a GitHub secret
+# anthropic_key: sk-...
+
+# Optional: Server URL for live testing
+# server_url: http://localhost:8000

@@ -1,0 +1,395 @@
+name: MCP Automated Testing
+
+on:
+  pull_request:
+    paths:
+      - 'MCP-list/**'
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  detect-mcp-changes:
+    name: Detect MCP Configuration Changes
+    runs-on: ubuntu-latest
+    outputs:
+      mcp-configs: ${{ steps.detect.outputs.mcp-configs }}
+      has-changes: ${{ steps.detect.outputs.has-changes }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Detect changed MCP configurations
+        id: detect
+        run: |
+          # Get changed files in PR
+          git fetch origin ${{ github.base_ref }}
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          
+          # Find MCP configurations in changed files
+          MCP_NAMES=""
+          for file in $CHANGED_FILES; do
+            if [[ $file == MCP-list/* ]]; then
+              # Extract MCP name (second path component)
+              MCP_NAME=$(echo $file | cut -d'/' -f2)
+              if [ ! -z "$MCP_NAME" ] && [ "$MCP_NAME" != "README.md" ]; then
+                # Add to list if not already present
+                if [[ ! " $MCP_NAMES " =~ " $MCP_NAME " ]]; then
+                  MCP_NAMES="$MCP_NAMES $MCP_NAME"
+                fi
+              fi
+            fi
+          done
+          
+          MCP_NAMES=$(echo $MCP_NAMES | xargs)  # trim whitespace
+          
+          if [ -z "$MCP_NAMES" ]; then
+            echo "has-changes=false" >> $GITHUB_OUTPUT
+            echo "No MCP configurations changed"
+          else
+            echo "has-changes=true" >> $GITHUB_OUTPUT
+            
+            # Convert to JSON array format
+            MCP_ARRAY="["
+            FIRST=true
+            for mcp in $MCP_NAMES; do
+              if [ "$FIRST" = true ]; then
+                FIRST=false
+              else
+                MCP_ARRAY="$MCP_ARRAY,"
+              fi
+              MCP_ARRAY="$MCP_ARRAY\"$mcp\""
+            done
+            MCP_ARRAY="$MCP_ARRAY]"
+            
+            echo "mcp-configs=$MCP_ARRAY" >> $GITHUB_OUTPUT
+            echo "Detected MCP configurations: $MCP_NAMES"
+            echo "JSON array: $MCP_ARRAY"
+          fi
+
+  test-mcp:
+    name: Test ${{ matrix.mcp }}
+    runs-on: ubuntu-latest
+    needs: detect-mcp-changes
+    if: needs.detect-mcp-changes.outputs.has-changes == 'true'
+    strategy:
+      matrix:
+        mcp: ${{ fromJson(needs.detect-mcp-changes.outputs.mcp-configs) }}
+      fail-fast: false
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install system dependencies
+        run: |
+          # Install Trivy
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+      
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Parse MCP configuration
+        id: parse-config
+        run: |
+          python3 << 'PYTHON_SCRIPT'
+          import os
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path.cwd()))
+          
+          from src.utils.config_parser import parse_config_file
+          
+          mcp_name = "${{ matrix.mcp }}"
+          config_file = f"MCP-list/{mcp_name}/config.txt"
+          
+          try:
+              config = parse_config_file(config_file)
+              
+              # Set outputs for GitHub Actions
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f"source={config['source']}\n")
+                  if config['ref']:
+                      f.write(f"ref={config['ref']}\n")
+                  if config['version']:
+                      f.write(f"version={config['version']}\n")
+                  if config['source_type']:
+                      f.write(f"source_type={config['source_type']}\n")
+                  if config['server_url']:
+                      f.write(f"server_url={config['server_url']}\n")
+              
+              print(f"Parsed configuration for {mcp_name}:")
+              print(f"  Source: {config['source']}")
+              if config['ref']:
+                  print(f"  Ref: {config['ref']}")
+              if config['version']:
+                  print(f"  Version: {config['version']}")
+          
+          except Exception as e:
+              print(f"Error parsing config: {e}")
+              sys.exit(1)
+          PYTHON_SCRIPT
+      
+      - name: Build Docker sandbox image
+        run: |
+          python -m src.cli build
+      
+      - name: Run MCP sandbox analysis
+        id: analysis
+        run: |
+          # Build command with parsed config
+          CMD="python -m src.cli analyze '${{ steps.parse-config.outputs.source }}'"
+          
+          if [ ! -z "${{ steps.parse-config.outputs.ref }}" ]; then
+            CMD="$CMD --ref '${{ steps.parse-config.outputs.ref }}'"
+          fi
+          
+          if [ ! -z "${{ steps.parse-config.outputs.version }}" ]; then
+            CMD="$CMD --version '${{ steps.parse-config.outputs.version }}'"
+          fi
+          
+          if [ ! -z "${{ steps.parse-config.outputs.source_type }}" ]; then
+            CMD="$CMD --source-type '${{ steps.parse-config.outputs.source_type }}'"
+          fi
+          
+          if [ ! -z "${{ steps.parse-config.outputs.server_url }}" ]; then
+            CMD="$CMD --server-url '${{ steps.parse-config.outputs.server_url }}'"
+          fi
+          
+          # Add output path
+          OUTPUT_FILE="MCP-list/${{ matrix.mcp }}/results.json"
+          CMD="$CMD --output '$OUTPUT_FILE'"
+          
+          # Add Anthropic key if available
+          if [ ! -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            CMD="$CMD --anthropic-key '${{ secrets.ANTHROPIC_API_KEY }}'"
+          fi
+          
+          echo "Running: $CMD"
+          eval $CMD || true  # Continue even if analysis fails
+      
+      - name: Generate report markdown
+        run: |
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          from pathlib import Path
+          
+          mcp_name = "${{ matrix.mcp }}"
+          results_file = f"MCP-list/{mcp_name}/results.json"
+          report_file = f"MCP-list/{mcp_name}/report.md"
+          
+          try:
+              with open(results_file, 'r') as f:
+                  results = json.load(f)
+              
+              # Generate markdown report
+              report = f"""# MCP Security Analysis Report: {mcp_name}
+          
+          **Generated:** {results.get('timestamp', 'N/A')}
+          **Status:** {results.get('status', 'UNKNOWN')}
+          **Overall Risk Score:** {results.get('overall_risk_score', 'N/A')}/100
+          
+          ## Summary
+          
+          {results.get('overall_risk_score', 0) <= 40 and '✅ Low Risk' or results.get('overall_risk_score', 0) <= 70 and '⚠️ Medium Risk' or '❌ High Risk'}
+          
+          ## Recommendations
+          
+          """
+              
+              for rec in results.get('recommendations', []):
+                  report += f"- {rec}\n"
+              
+              report += "\n## Vulnerability Scan\n\n"
+              scan_summary = results.get('scan_summary', {})
+              report += f"""
+          - **Total Vulnerabilities:** {scan_summary.get('total', 0)}
+          - **Critical:** {scan_summary.get('critical', 0)}
+          - **High:** {scan_summary.get('high', 0)}
+          - **Medium:** {scan_summary.get('medium', 0)}
+          - **Low:** {scan_summary.get('low', 0)}
+          """
+              
+              if results.get('fuzzing_summary'):
+                  report += "\n## Fuzzing Results\n\n"
+                  fuzz = results['fuzzing_summary']
+                  report += f"""
+          - **Total Tests:** {fuzz.get('total_tests', 0)}
+          - **Leaked Data:** {fuzz.get('leaked_data', 0)}
+          - **Suspicious Behavior:** {fuzz.get('suspicious', 0)}
+          """
+              
+              # Save report
+              with open(report_file, 'w') as f:
+                  f.write(report)
+              
+              print(f"Generated report: {report_file}")
+          
+          except FileNotFoundError:
+              print(f"Results file not found: {results_file}")
+              # Create a basic report anyway
+              with open(report_file, 'w') as f:
+                  f.write(f"# MCP Security Analysis Report: {mcp_name}\n\n**Status:** Analysis failed or incomplete\n")
+          
+          except Exception as e:
+              print(f"Error generating report: {e}")
+          PYTHON_SCRIPT
+      
+      - name: Copy vulnerability details
+        run: |
+          # Copy detailed vulnerability report if exists
+          if [ -f "reports/trivy-report.json" ]; then
+            cp reports/trivy-report.json "MCP-list/${{ matrix.mcp }}/vulnerabilities.json"
+          fi
+      
+      - name: Commit results to PR
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          git add "MCP-list/${{ matrix.mcp }}/"
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Add test results for ${{ matrix.mcp }}"
+            git push origin HEAD:${{ github.head_ref }}
+          fi
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcp-test-results-${{ matrix.mcp }}
+          path: |
+            MCP-list/${{ matrix.mcp }}/
+            reports/
+
+  update-pr-description:
+    name: Update PR with Results
+    runs-on: ubuntu-latest
+    needs: [detect-mcp-changes, test-mcp]
+    if: always() && needs.detect-mcp-changes.outputs.has-changes == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Generate PR summary
+        id: summary
+        run: |
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          import os
+          from pathlib import Path
+          
+          mcp_configs = ${{ needs.detect-mcp-changes.outputs.mcp-configs }}
+          
+          summary = "## 🔬 MCP Testing Results\n\n"
+          summary += "Automated security analysis completed for the following MCPs:\n\n"
+          
+          for mcp_name in mcp_configs:
+              results_file = Path(f"MCP-list/{mcp_name}/results.json")
+              
+              if results_file.exists():
+                  try:
+                      with open(results_file, 'r') as f:
+                          results = json.load(f)
+                      
+                      risk_score = results.get('overall_risk_score', 0)
+                      status_emoji = '✅' if risk_score <= 40 else '⚠️' if risk_score <= 70 else '❌'
+                      
+                      summary += f"### {status_emoji} {mcp_name}\n\n"
+                      summary += f"- **Risk Score:** {risk_score}/100\n"
+                      summary += f"- **Status:** {results.get('status', 'UNKNOWN')}\n"
+                      
+                      scan = results.get('scan_summary', {})
+                      summary += f"- **Vulnerabilities:** {scan.get('total', 0)} "
+                      summary += f"(Critical: {scan.get('critical', 0)}, High: {scan.get('high', 0)})\n"
+                      
+                      summary += f"\n[View detailed report](MCP-list/{mcp_name}/report.md)\n\n"
+                  
+                  except Exception as e:
+                      summary += f"### ⚠️ {mcp_name}\n\n"
+                      summary += f"- **Status:** Analysis failed - {str(e)}\n\n"
+              else:
+                  summary += f"### ⚠️ {mcp_name}\n\n"
+                  summary += f"- **Status:** Results not available\n\n"
+          
+          # Write summary to file for the next step
+          with open('pr_summary.txt', 'w') as f:
+              f.write(summary)
+          
+          print("Generated PR summary:")
+          print(summary)
+          PYTHON_SCRIPT
+      
+      - name: Update PR description
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('pr_summary.txt', 'utf8');
+            
+            // Get current PR
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            let body = pr.body || '';
+            
+            // Remove old test results if they exist
+            const marker_start = '<!-- MCP-TEST-RESULTS-START -->';
+            const marker_end = '<!-- MCP-TEST-RESULTS-END -->';
+            
+            const start_idx = body.indexOf(marker_start);
+            const end_idx = body.indexOf(marker_end);
+            
+            if (start_idx !== -1 && end_idx !== -1) {
+              body = body.substring(0, start_idx) + body.substring(end_idx + marker_end.length);
+            }
+            
+            // Add new test results
+            const new_content = `\n\n${marker_start}\n${summary}\n${marker_end}`;
+            body = body.trim() + new_content;
+            
+            // Update PR
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              body: body
+            });
+            
+            console.log('PR description updated with test results');
