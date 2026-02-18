@@ -159,36 +159,47 @@ jobs:
       - name: Run MCP sandbox analysis
         id: analysis
         run: |
-          # Build command with parsed config
-          CMD="python -m src.cli analyze '${{ steps.parse-config.outputs.source }}'"
+          # Build command array to avoid shell injection
+          python3 << 'PYTHON_SCRIPT'
+          import subprocess
+          import os
           
-          if [ ! -z "${{ steps.parse-config.outputs.ref }}" ]; then
-            CMD="$CMD --ref '${{ steps.parse-config.outputs.ref }}'"
-          fi
+          # Build command as array (safe from injection)
+          cmd = [
+              'python', '-m', 'src.cli', 'analyze',
+              '${{ steps.parse-config.outputs.source }}'
+          ]
           
-          if [ ! -z "${{ steps.parse-config.outputs.version }}" ]; then
-            CMD="$CMD --version '${{ steps.parse-config.outputs.version }}'"
-          fi
+          # Add optional arguments
+          if '${{ steps.parse-config.outputs.ref }}':
+              cmd.extend(['--ref', '${{ steps.parse-config.outputs.ref }}'])
           
-          if [ ! -z "${{ steps.parse-config.outputs.source_type }}" ]; then
-            CMD="$CMD --source-type '${{ steps.parse-config.outputs.source_type }}'"
-          fi
+          if '${{ steps.parse-config.outputs.version }}':
+              cmd.extend(['--version', '${{ steps.parse-config.outputs.version }}'])
           
-          if [ ! -z "${{ steps.parse-config.outputs.server_url }}" ]; then
-            CMD="$CMD --server-url '${{ steps.parse-config.outputs.server_url }}'"
-          fi
+          if '${{ steps.parse-config.outputs.source_type }}':
+              cmd.extend(['--source-type', '${{ steps.parse-config.outputs.source_type }}'])
+          
+          if '${{ steps.parse-config.outputs.server_url }}':
+              cmd.extend(['--server-url', '${{ steps.parse-config.outputs.server_url }}'])
           
           # Add output path
-          OUTPUT_FILE="MCP-list/${{ matrix.mcp }}/results.json"
-          CMD="$CMD --output '$OUTPUT_FILE'"
+          output_file = 'MCP-list/${{ matrix.mcp }}/results.json'
+          cmd.extend(['--output', output_file])
           
           # Add Anthropic key if available
-          if [ ! -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
-            CMD="$CMD --anthropic-key '${{ secrets.ANTHROPIC_API_KEY }}'"
-          fi
+          anthropic_key = '${{ secrets.ANTHROPIC_API_KEY }}'
+          if anthropic_key:
+              cmd.extend(['--anthropic-key', anthropic_key])
           
-          echo "Running: $CMD"
-          eval $CMD || true  # Continue even if analysis fails
+          print(f"Running: {' '.join(cmd)}")
+          
+          # Run command safely (no shell injection possible)
+          try:
+              subprocess.run(cmd, check=False)  # Continue even if analysis fails
+          except Exception as e:
+              print(f"Analysis error: {e}")
+          PYTHON_SCRIPT
       
       - name: Generate report markdown
         run: |

@@ -65,7 +65,7 @@ anthropic_key: sk-test-123
         config_file.write_text(
             """
 # This is a comment
-source: owner/repo  # Inline comment should be parsed
+source: owner/repo
 
 # Another comment
 ref: main
@@ -75,7 +75,7 @@ ref: main
 
         config = parse_config_file(str(config_file))
 
-        assert config["source"] == "owner/repo  # Inline comment should be parsed"
+        assert config["source"] == "owner/repo"
         assert config["ref"] == "main"
         assert config["version"] is None
 
@@ -229,3 +229,35 @@ version: 1.0.0
         assert config["source"] == "owner/repo"
         assert config["ref"] == "main"
         assert config["version"] == "1.0.0"
+
+    def test_parse_config_inline_comments(self, tmp_path):
+        """Test that inline comments are stripped from values."""
+        config_file = tmp_path / "config.txt"
+        config_file.write_text(
+            """
+source: owner/repo  # This is a comment
+ref: main  # Another comment
+version: 1.0.0  # Version comment
+"""
+        )
+
+        config = parse_config_file(str(config_file))
+
+        assert config["source"] == "owner/repo"
+        assert config["ref"] == "main"
+        assert config["version"] == "1.0.0"
+
+    def test_parse_config_preserves_url_hashes(self, tmp_path):
+        """Test that # in URLs are preserved."""
+        config_file = tmp_path / "config.txt"
+        config_file.write_text(
+            """
+source: https://github.com/owner/repo#branch
+server_url: http://example.com/path#fragment
+"""
+        )
+
+        config = parse_config_file(str(config_file))
+
+        assert config["source"] == "https://github.com/owner/repo#branch"
+        assert config["server_url"] == "http://example.com/path#fragment"

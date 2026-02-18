@@ -49,6 +49,11 @@ def parse_config_file(config_path: str) -> Dict[str, Optional[str]]:
                 key, value = match.groups()
                 key = key.lower()
                 value = value.strip()
+                
+                # Remove inline comments (anything after # that's not part of a URL)
+                # Keep # if it's part of a URL or version spec
+                if '#' in value and not any(x in value for x in ['http://', 'https://', 'git@']):
+                    value = value.split('#')[0].strip()
 
                 if key in config:
                     config[key] = value
@@ -85,7 +90,7 @@ def find_mcp_configs(base_path: str = "MCP-list") -> Dict[str, Dict[str, Optiona
                 config = parse_config_file(str(config_file))
                 configs[mcp_dir.name] = config
             except Exception as e:
-                print(f"Warning: Failed to parse config for {mcp_dir.name}: {e}")
+                print(f"Warning: Failed to parse config for {mcp_dir.name} at {config_file}: {e}")
 
     return configs
 
@@ -118,7 +123,7 @@ def get_changed_mcp_configs(changed_files: list) -> Dict[str, Dict[str, Optional
                 config = parse_config_file(str(config_file))
                 configs[mcp_name] = config
             except Exception as e:
-                print(f"Warning: Failed to parse config for {mcp_name}: {e}")
+                print(f"Warning: Failed to parse config for {mcp_name} at {config_file}: {e}")
 
     return configs
 
