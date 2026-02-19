@@ -29,6 +29,8 @@ class MCPConfig:
     version: Optional[str] = None
     ref: Optional[str] = None  # Branch, tag, or commit for GitHub
     workspace_path: Optional[Path] = None  # Local path after installation
+    command: Optional[str] = None  # Command to execute the MCP server (e.g., "npx", "node", "python")
+    args: Optional[list[str]] = None  # Arguments to pass to the command
 
 
 class MCPSource(ABC):

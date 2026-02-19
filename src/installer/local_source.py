@@ -16,18 +16,22 @@ class LocalSource(MCPSource):
     that accepts local paths.
     """
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, command: str = None, args: list[str] = None):
         """
         Initialize local source.
 
         Args:
             path: Local filesystem path to MCP server
+            command: Optional command to execute the MCP server
+            args: Optional arguments for the command
         """
         config = MCPConfig(
             name=Path(path).name,
             source_type=SourceType.LOCAL,
             source_reference=path,
             workspace_path=Path(path).resolve(),
+            command=command,
+            args=args,
         )
         super().__init__(config)
 

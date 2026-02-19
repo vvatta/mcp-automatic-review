@@ -21,13 +21,15 @@ class NpmSource(MCPSource):
     - Package with tag: package-name@latest
     """
 
-    def __init__(self, package_name: str, version: Optional[str] = None):
+    def __init__(self, package_name: str, version: Optional[str] = None, command: Optional[str] = None, args: Optional[list[str]] = None):
         """
         Initialize npm source.
 
         Args:
             package_name: npm package name (can include @version)
             version: Optional version specification
+            command: Optional command to execute the MCP server
+            args: Optional arguments for the command
         """
         # Parse package name and version if included in package_name
         if "@" in package_name and not package_name.startswith("@"):
@@ -43,6 +45,8 @@ class NpmSource(MCPSource):
             source_type=SourceType.NPM,
             source_reference=package_name,
             version=pkg_version,
+            command=command,
+            args=args,
         )
         super().__init__(config)
 

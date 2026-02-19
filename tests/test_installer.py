@@ -38,6 +38,12 @@ class TestLocalSource:
         workspace = await source.fetch_and_install(Path("/tmp"))
         assert workspace == tmp_path.resolve()
 
+    def test_init_with_command_and_args(self, tmp_path):
+        """Test LocalSource initialization with command and args."""
+        source = LocalSource(str(tmp_path), command="npx", args=["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"])
+        assert source.config.command == "npx"
+        assert source.config.args == ["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"]
+
 
 class TestGitHubSource:
     """Test GitHubSource."""
@@ -104,6 +110,12 @@ class TestNpmSource:
 
         source = NpmSource("")
         assert source.validate() is False
+
+    def test_init_with_command_and_args(self):
+        """Test NpmSource initialization with command and args."""
+        source = NpmSource("@openbnb/mcp-server-airbnb", command="npx", args=["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"])
+        assert source.config.command == "npx"
+        assert source.config.args == ["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"]
 
 
 class TestPyPiSource:
@@ -192,3 +204,14 @@ class TestMCPSourceFactory:
         """Test invalid explicit source type."""
         with pytest.raises(ValueError):
             MCPSourceFactory.create_source("my-ref", source_type="invalid")
+
+    def test_create_source_with_command_and_args(self):
+        """Test factory creating source with command and args."""
+        source = MCPSourceFactory.create_source(
+            "npm:@openbnb/mcp-server-airbnb",
+            command="npx",
+            args=["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"]
+        )
+        assert isinstance(source, NpmSource)
+        assert source.config.command == "npx"
+        assert source.config.args == ["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"]

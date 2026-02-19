@@ -26,7 +26,7 @@ class GitHubSource(MCPSource):
     GITHUB_URL_PATTERN = re.compile(r"^https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$")
     GITHUB_SHORT_PATTERN = re.compile(r"^([^/]+)/([^/]+)$")
 
-    def __init__(self, reference: str, ref: Optional[str] = None, version: Optional[str] = None):
+    def __init__(self, reference: str, ref: Optional[str] = None, version: Optional[str] = None, command: Optional[str] = None, args: Optional[list[str]] = None):
         """
         Initialize GitHub source.
 
@@ -34,6 +34,8 @@ class GitHubSource(MCPSource):
             reference: GitHub URL or owner/repo reference
             ref: Optional branch, tag, or commit reference
             version: Optional version string (for metadata)
+            command: Optional command to execute the MCP server
+            args: Optional arguments for the command
         """
         owner, repo = self._parse_reference(reference)
 
@@ -43,6 +45,8 @@ class GitHubSource(MCPSource):
             source_reference=reference,
             version=version,
             ref=ref,
+            command=command,
+            args=args,
         )
         super().__init__(config)
 
