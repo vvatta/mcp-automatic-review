@@ -55,6 +55,11 @@ reports/
 *.pcap
 *.jsonl
 
+# MCP-list results should be committed (don't ignore)
+!MCP-list/**/results.json
+!MCP-list/**/report.md
+!MCP-list/**/vulnerabilities.json
+
 # Docker
 .docker/
 
