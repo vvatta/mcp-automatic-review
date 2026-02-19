@@ -265,6 +265,72 @@ async def analyze_server():
 asyncio.run(analyze_server())
 ```
 
+### MCP Server Configuration with Custom Commands
+
+You can now configure MCP servers with custom execution commands and arguments:
+
+```python
+from src.installer.source_factory import MCPSourceFactory
+
+# Configure an npm-based MCP server with custom arguments
+source = MCPSourceFactory.create_source(
+    "npm:@openbnb/mcp-server-airbnb",
+    command="npx",
+    args=["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"]
+)
+
+print(f"Server: {source.config.name}")
+print(f"Command: {source.config.command}")
+print(f"Args: {' '.join(source.config.args)}")
+
+# Example output:
+# Server: @openbnb/mcp-server-airbnb
+# Command: npx
+# Args: -y @openbnb/mcp-server-airbnb --ignore-robots-txt
+```
+
+This configuration style matches the standard MCP server configuration format:
+
+```json
+{
+  "mcpServers": {
+    "airbnb": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@openbnb/mcp-server-airbnb",
+        "--ignore-robots-txt"
+      ]
+    }
+  }
+}
+```
+
+Additional examples for different server types:
+
+```python
+# Python-based MCP server with debug flag
+source = MCPSourceFactory.create_source(
+    "pypi:my-mcp-server",
+    command="python",
+    args=["-m", "my_mcp_server", "--debug", "--log-level", "info"]
+)
+
+# Local Node.js MCP server with custom port
+source = MCPSourceFactory.create_source(
+    "./my-local-server",
+    command="node",
+    args=["server.js", "--port", "8080", "--verbose"]
+)
+
+# GitHub-based MCP server with specific runtime
+source = MCPSourceFactory.create_source(
+    "https://github.com/owner/mcp-server",
+    command="npm",
+    args=["start", "--", "--config", "production.json"]
+)
+```
+
 ## Tips
 
 1. **First Time Setup**: Run `python -m src.cli setup` to check dependencies
