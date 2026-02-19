@@ -4,6 +4,7 @@ Handles MCP servers that are already on the local filesystem.
 """
 
 from pathlib import Path
+from typing import Optional
 
 from src.installer.mcp_source import MCPSource, MCPConfig, SourceType
 
@@ -16,7 +17,7 @@ class LocalSource(MCPSource):
     that accepts local paths.
     """
 
-    def __init__(self, path: str, command: str = None, args: list[str] = None):
+    def __init__(self, path: str, command: Optional[str] = None, args: Optional[list[str]] = None):
         """
         Initialize local source.
 
