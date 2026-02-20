@@ -52,6 +52,55 @@ python -m src.cli analyze django --source-type pypi --version ">=4.0.0"
 
 ## Advanced Usage
 
+### MCP Server Configuration with Command and Args
+
+When creating MCP server configurations programmatically, you can now specify how to execute the server:
+
+```python
+from src.installer.source_factory import MCPSourceFactory
+
+# Create an npm source with custom command and args
+source = MCPSourceFactory.create_source(
+    "npm:@openbnb/mcp-server-airbnb",
+    command="npx",
+    args=["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"]
+)
+
+# The configuration is available in source.config
+print(f"Command: {source.config.command}")
+print(f"Args: {source.config.args}")
+```
+
+This is particularly useful when you need to:
+- Pass additional flags to the MCP server
+- Use a specific runtime command (npx, node, python, etc.)
+- Configure server behavior for testing
+
+Example configuration for different server types:
+
+```python
+# npm/npx-based MCP server
+source = MCPSourceFactory.create_source(
+    "npm:@modelcontextprotocol/server-filesystem",
+    command="npx",
+    args=["-y", "@modelcontextprotocol/server-filesystem", "--allowed-directory", "/safe/path"]
+)
+
+# Python-based MCP server
+source = MCPSourceFactory.create_source(
+    "pypi:my-mcp-server",
+    command="python",
+    args=["-m", "my_mcp_server", "--debug"]
+)
+
+# Local MCP server with custom command
+source = MCPSourceFactory.create_source(
+    "./my-local-server",
+    command="node",
+    args=["index.js", "--port", "8080"]
+)
+```
+
 ### With API Key for LLM Fuzzing
 
 ```bash

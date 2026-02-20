@@ -21,19 +21,23 @@ class PyPiSource(MCPSource):
     - Package with version specifier: package-name>=1.0.0
     """
 
-    def __init__(self, package_name: str, version: Optional[str] = None):
+    def __init__(self, package_name: str, version: Optional[str] = None, command: Optional[str] = None, args: Optional[list[str]] = None):
         """
         Initialize PyPI source.
 
         Args:
             package_name: PyPI package name
             version: Optional version specification (e.g., "==1.0.0", ">=1.0.0")
+            command: Optional command to execute the MCP server
+            args: Optional arguments for the command
         """
         config = MCPConfig(
             name=package_name,
             source_type=SourceType.PYPI,
             source_reference=package_name,
             version=version,
+            command=command,
+            args=args,
         )
         super().__init__(config)
 
