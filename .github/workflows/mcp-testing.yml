@@ -286,7 +286,22 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "Add test results for ${{ matrix.mcp }}"
-            git push origin HEAD:${{ github.head_ref }}
+            # Retry push with fetch+rebase to handle concurrent jobs or remote updates
+            for attempt in 1 2 3; do
+              if git push origin HEAD:${{ github.head_ref }}; then
+                echo "Push successful on attempt $attempt"
+                break
+              fi
+              if [ $attempt -lt 3 ]; then
+                echo "Push failed (attempt $attempt), fetching and rebasing..."
+                git fetch origin ${{ github.head_ref }}
+                git rebase origin/${{ github.head_ref }}
+                sleep $((attempt * 5))
+              else
+                echo "Push failed after $attempt attempts"
+                exit 1
+              fi
+            done
           fi
       
       - name: Upload artifacts
