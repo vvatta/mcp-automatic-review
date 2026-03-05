@@ -1,0 +1,8 @@
+# MCP Testing Configuration for Playwright MCP
+# https://github.com/microsoft/playwright-mcp
+
+# Source of the MCP (npm package)
+source: npm:@playwright/mcp
+
+# Source type
+source_type: npm
