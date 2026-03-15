@@ -1,0 +1,16 @@
+# Atlassian Rovo MCP Server
+# Cloud-hosted MCP server providing access to Jira, Confluence, and Compass.
+# Reference: https://github.com/atlassian/atlassian-mcp-server
+
+# Remote endpoint — no code to clone or install.
+source: url:https://mcp.atlassian.com/v1/mcp
+
+# Explicit source type for remote/cloud-hosted MCP servers.
+source_type: url
+
+# Live server URL used for LLM fuzzing (same as the source for URL sources).
+server_url: https://mcp.atlassian.com/v1/mcp
+
+# Optional: API token for authenticated access.
+# Set the MCP_AUTH_TOKEN environment variable or provide via --auth-token.
+# auth_token: your-atlassian-api-token-here

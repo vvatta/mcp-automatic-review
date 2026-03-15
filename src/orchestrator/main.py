@@ -21,6 +21,7 @@ from src.inspector.static_scanner import StaticScanner, ScanResult
 from src.interrogator.llm_fuzzer import MCPInterrogator, FuzzResult
 from src.monitor.behavior_monitor import BehaviorMonitor, BehaviorReport
 from src.installer.source_factory import MCPSourceFactory
+from src.installer.mcp_source import SourceType
 
 console = Console()
 
@@ -72,26 +73,39 @@ class MCPSandboxOrchestrator:
         source_type: Optional[str] = None,
         version: Optional[str] = None,
         ref: Optional[str] = None,
+        auth_token: Optional[str] = None,
     ):
         """
         Initialize MCP Sandbox Orchestrator.
 
         Args:
-            source_reference: MCP source (local path, GitHub URL, npm/pypi package)
+            source_reference: MCP source (local path, GitHub URL, npm/pypi package, or remote URL)
             mcp_server_url: URL of running MCP server (for live testing)
             anthropic_api_key: API key for LLM fuzzing
-            source_type: Explicit source type (local, github, npm, pypi)
+            source_type: Explicit source type (local, github, npm, pypi, url)
             version: Version specification for package sources
             ref: Git reference (branch/tag/commit) for GitHub sources
+            auth_token: API token for remote/cloud-hosted MCP servers
         """
         self.source_reference = source_reference
-        self.mcp_server_url = mcp_server_url or "http://localhost:8000"
         self.anthropic_api_key = anthropic_api_key
+        self.auth_token = auth_token
 
         # Create MCP source
         self.mcp_source = MCPSourceFactory.create_source(
-            reference=source_reference, source_type=source_type, version=version, ref=ref
+            reference=source_reference,
+            source_type=source_type,
+            version=version,
+            ref=ref,
+            auth_token=auth_token,
         )
+
+        # For URL sources the server endpoint IS the source reference unless
+        # the caller explicitly overrides it with mcp_server_url.
+        if self.mcp_source.config.source_type == SourceType.URL:
+            self.mcp_server_url = mcp_server_url or self.mcp_source.config.source_reference
+        else:
+            self.mcp_server_url = mcp_server_url or "http://localhost:8000"
 
         # Workspace will be set after fetch
         self.workspace_path: Optional[Path] = None
@@ -109,6 +123,11 @@ class MCPSandboxOrchestrator:
         """
         Run complete malware sandbox analysis.
 
+        For URL/remote sources (cloud-hosted MCP servers) static analysis and
+        container isolation are skipped because there is no local code to
+        inspect — only live interrogation against the remote endpoint is
+        performed.
+
         Returns:
             SandboxResult with all findings
         """
@@ -121,42 +140,56 @@ class MCPSandboxOrchestrator:
             )
         )
 
-        try:
+        is_remote = self.mcp_source.config.source_type == SourceType.URL        try:
             # Phase 0: Fetch MCP Source
             console.print("\n[bold]Phase 0: Fetching MCP Source[/bold]")
             await self._fetch_mcp_source()
 
-            # Phase 1: Static Analysis
-            console.print("\n[bold]Phase 1: Static & Dependency Analysis[/bold]")
-            self.scan_result = await self._run_static_analysis()
-
-            # Phase 2: Container Isolation
-            console.print("\n[bold]Phase 2: Isolation Engine (Docker + gVisor)[/bold]")
-            container = await self._setup_isolation()
-
-            if not container:
-                return self._create_failed_result(
-                    "Failed to create sandbox", time.time() - start_time
+            if is_remote:
+                console.print(
+                    "[yellow]ℹ Remote MCP server detected — "
+                    "skipping static analysis and container isolation.[/yellow]"
+                )
+                console.print(
+                    f"[blue]Remote endpoint: {self.mcp_server_url}[/blue]"
                 )
 
-            # Phase 3: Behavioral Monitoring (start)
-            console.print("\n[bold]Phase 3: Behavioral Monitoring (Starting)[/bold]")
-            monitor = BehaviorMonitor(container.name)
-            monitor.start_monitoring()
+                # Phase 4: Dynamic Interrogation (only phase for remote sources)
+                console.print("\n[bold]Phase 4: Dynamic Interrogation (LLM Fuzzing)[/bold]")
+                self.fuzz_results = await self._run_interrogation()
 
-            # Wait for container to be ready
-            await asyncio.sleep(5)
+            else:
+                # Phase 1: Static Analysis
+                console.print("\n[bold]Phase 1: Static & Dependency Analysis[/bold]")
+                self.scan_result = await self._run_static_analysis()
 
-            # Phase 4: Dynamic Interrogation
-            console.print("\n[bold]Phase 4: Dynamic Interrogation (LLM Fuzzing)[/bold]")
-            self.fuzz_results = await self._run_interrogation()
+                # Phase 2: Container Isolation
+                console.print("\n[bold]Phase 2: Isolation Engine (Docker + gVisor)[/bold]")
+                container = await self._setup_isolation()
 
-            # Phase 5: Behavioral Monitoring (collect)
-            console.print("\n[bold]Phase 5: Behavioral Monitoring (Collecting)[/bold]")
-            self.behavior_report = monitor.generate_report()
+                if not container:
+                    return self._create_failed_result(
+                        "Failed to create sandbox", time.time() - start_time
+                    )
 
-            # Cleanup container
-            await self._cleanup_container(container)
+                # Phase 3: Behavioral Monitoring (start)
+                console.print("\n[bold]Phase 3: Behavioral Monitoring (Starting)[/bold]")
+                monitor = BehaviorMonitor(container.name)
+                monitor.start_monitoring()
+
+                # Wait for container to be ready
+                await asyncio.sleep(5)
+
+                # Phase 4: Dynamic Interrogation
+                console.print("\n[bold]Phase 4: Dynamic Interrogation (LLM Fuzzing)[/bold]")
+                self.fuzz_results = await self._run_interrogation()
+
+                # Phase 5: Behavioral Monitoring (collect)
+                console.print("\n[bold]Phase 5: Behavioral Monitoring (Collecting)[/bold]")
+                self.behavior_report = monitor.generate_report()
+
+                # Cleanup container
+                await self._cleanup_container(container)
 
             # Phase 6: Generate Final Report
             console.print("\n[bold]Phase 6: Final Report Generation[/bold]")

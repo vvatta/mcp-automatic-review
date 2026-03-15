@@ -23,11 +23,14 @@ ref: main
 # Optional: Version (for npm/PyPI packages)
 # version: 1.0.0
 
-# Optional: Source type (local, github, npm, pypi)
+# Optional: Source type (local, github, npm, pypi, url)
 # source_type: github
 
 # Optional: Server URL for live testing
 # server_url: http://localhost:8000
+
+# Optional: API token for remote/cloud-hosted MCP servers
+# auth_token: your-api-token-here
 ```
 
 ### Source Examples
@@ -49,6 +52,18 @@ version: 1.0.0
 source: pypi:mcp-server-example
 version: 1.0.0
 ```
+
+**Remote / Cloud-hosted MCP Server (e.g. Atlassian Rovo):**
+```
+source: url:https://mcp.atlassian.com/v1/mcp
+source_type: url
+server_url: https://mcp.atlassian.com/v1/mcp
+# auth_token: your-api-token-here
+```
+
+For remote URL sources, static analysis and container isolation are skipped
+because there is no local code to inspect.  Only live LLM fuzzing is
+performed against the running endpoint.
 
 ## Test Results
 
