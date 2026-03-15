@@ -261,3 +261,39 @@ server_url: http://example.com/path#fragment
 
         assert config["source"] == "https://github.com/owner/repo#branch"
         assert config["server_url"] == "http://example.com/path#fragment"
+
+    def test_parse_config_auth_token(self, tmp_path):
+        """Test that auth_token field is parsed correctly."""
+        config_file = tmp_path / "config.txt"
+        config_file.write_text(
+            """
+source: url:https://mcp.atlassian.com/v1/mcp
+source_type: url
+auth_token: my-secret-token
+"""
+        )
+
+        config = parse_config_file(str(config_file))
+
+        assert config["source"] == "url:https://mcp.atlassian.com/v1/mcp"
+        assert config["source_type"] == "url"
+        assert config["auth_token"] == "my-secret-token"
+
+    def test_parse_config_url_source(self, tmp_path):
+        """Test parsing a config for a remote/URL source (e.g. Atlassian)."""
+        config_file = tmp_path / "config.txt"
+        config_file.write_text(
+            """
+source: url:https://mcp.atlassian.com/v1/mcp
+source_type: url
+server_url: https://mcp.atlassian.com/v1/mcp
+# auth_token: your-token-here
+"""
+        )
+
+        config = parse_config_file(str(config_file))
+
+        assert config["source"] == "url:https://mcp.atlassian.com/v1/mcp"
+        assert config["source_type"] == "url"
+        assert config["server_url"] == "https://mcp.atlassian.com/v1/mcp"
+        assert config["auth_token"] is None

@@ -21,7 +21,7 @@ console = Console()
 @app.command()
 def analyze(
     source: str = typer.Argument(
-        ..., help="MCP source to analyze (local path, GitHub URL, npm/pypi package)"
+        ..., help="MCP source to analyze (local path, GitHub URL, npm/pypi package, or remote URL)"
     ),
     server_url: Optional[str] = typer.Option(
         None, "--server-url", help="URL of running MCP server (for live testing)"
@@ -30,13 +30,16 @@ def analyze(
         None, "--anthropic-key", help="Anthropic API key for LLM fuzzing"
     ),
     source_type: Optional[str] = typer.Option(
-        None, "--source-type", help="Explicit source type: local, github, npm, pypi"
+        None, "--source-type", help="Explicit source type: local, github, npm, pypi, url"
     ),
     version: Optional[str] = typer.Option(
         None, "--version", help="Version specification for npm/pypi packages"
     ),
     ref: Optional[str] = typer.Option(
         None, "--ref", help="Git reference (branch/tag/commit) for GitHub sources"
+    ),
+    auth_token: Optional[str] = typer.Option(
+        None, "--auth-token", help="API token for remote/cloud-hosted MCP servers"
     ),
     output: str = typer.Option(
         "sandbox_result.json", "--output", "-o", help="Output file for results"
@@ -46,10 +49,10 @@ def analyze(
     Run complete malware sandbox analysis on an MCP server.
 
     This will:
-    1. Fetch MCP from source (GitHub, npm, PyPI, or local)
-    2. Scan for vulnerabilities (Trivy)
-    3. Launch in isolated container (Docker + gVisor)
-    4. Monitor behavior (eBPF, syscalls)
+    1. Fetch MCP from source (GitHub, npm, PyPI, local, or remote URL)
+    2. Scan for vulnerabilities (Trivy) — skipped for remote URL sources
+    3. Launch in isolated container (Docker + gVisor) — skipped for remote URL sources
+    4. Monitor behavior (eBPF, syscalls) — skipped for remote URL sources
     5. Fuzz with adversarial payloads (LLM)
     6. Generate comprehensive security report
 
@@ -68,6 +71,10 @@ def analyze(
         # Analyze from PyPI
         mcp-sandbox analyze pypi:package-name
         mcp-sandbox analyze package-name==1.0.0
+
+        # Analyze a remote/cloud-hosted MCP server (e.g. Atlassian)
+        mcp-sandbox analyze url:https://mcp.atlassian.com/v1/mcp --auth-token YOUR_TOKEN
+        mcp-sandbox analyze https://mcp.example.com/mcp --source-type url
     """
     console.print("[bold cyan]MCP Malware Sandbox[/bold cyan]")
     console.print(f"Analyzing source: {source}\n")
@@ -75,6 +82,10 @@ def analyze(
     # Get API key from environment if not provided
     if not anthropic_key:
         anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+
+    # Get auth token from environment if not provided
+    if not auth_token:
+        auth_token = os.getenv("MCP_AUTH_TOKEN")
 
     # Create orchestrator
     orchestrator = MCPSandboxOrchestrator(
@@ -84,6 +95,7 @@ def analyze(
         source_type=source_type,
         version=version,
         ref=ref,
+        auth_token=auth_token,
     )
 
     # Run analysis

@@ -8,6 +8,7 @@ from src.installer.local_source import LocalSource
 from src.installer.github_source import GitHubSource
 from src.installer.npm_source import NpmSource
 from src.installer.pypi_source import PyPiSource
+from src.installer.url_source import UrlSource
 from src.installer.source_factory import MCPSourceFactory
 from src.installer.mcp_source import SourceType
 
@@ -215,3 +216,115 @@ class TestMCPSourceFactory:
         assert isinstance(source, NpmSource)
         assert source.config.command == "npx"
         assert source.config.args == ["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"]
+
+    def test_url_prefix(self):
+        """Test explicit url: prefix detection."""
+        source = MCPSourceFactory.create_source("url:https://mcp.atlassian.com/v1/mcp")
+        assert isinstance(source, UrlSource)
+        assert source.config.source_type == SourceType.URL
+
+    def test_non_github_https_url(self):
+        """Test that a non-GitHub HTTPS URL is detected as a URL source."""
+        source = MCPSourceFactory.create_source("https://mcp.example.com/v1/mcp")
+        assert isinstance(source, UrlSource)
+        assert source.config.source_type == SourceType.URL
+
+    def test_explicit_url_source_type(self):
+        """Test explicit source_type=url."""
+        source = MCPSourceFactory.create_source(
+            "https://mcp.atlassian.com/v1/mcp", source_type="url"
+        )
+        assert isinstance(source, UrlSource)
+
+    def test_url_source_with_auth_token(self):
+        """Test factory passes auth_token to UrlSource."""
+        source = MCPSourceFactory.create_source(
+            "url:https://mcp.atlassian.com/v1/mcp",
+            auth_token="test-token-123",
+        )
+        assert isinstance(source, UrlSource)
+        assert source.config.auth_token == "test-token-123"
+
+    def test_github_url_still_github(self):
+        """Test that GitHub HTTPS URLs are still detected as GitHub sources."""
+        source = MCPSourceFactory.create_source("https://github.com/owner/repo")
+        assert isinstance(source, GitHubSource)
+        assert source.config.source_type == SourceType.GITHUB
+
+
+class TestUrlSource:
+    """Test UrlSource."""
+
+    def test_init_https(self):
+        """Test initialization with an HTTPS URL."""
+        source = UrlSource("https://mcp.atlassian.com/v1/mcp")
+        assert source.config.source_type == SourceType.URL
+        assert source.url == "https://mcp.atlassian.com/v1/mcp"
+
+    def test_init_http(self):
+        """Test initialization with an HTTP URL."""
+        source = UrlSource("http://localhost:8080/mcp")
+        assert source.url == "http://localhost:8080/mcp"
+
+    def test_init_strips_url_prefix(self):
+        """Test that a leading 'url:' prefix is stripped."""
+        source = UrlSource("url:https://mcp.atlassian.com/v1/mcp")
+        assert source.url == "https://mcp.atlassian.com/v1/mcp"
+
+    def test_init_with_auth_token(self):
+        """Test initialization with an auth token."""
+        source = UrlSource("https://mcp.example.com/mcp", auth_token="tok-123")
+        assert source.config.auth_token == "tok-123"
+
+    def test_validate_valid_url(self):
+        """Test that a valid HTTPS URL passes validation."""
+        source = UrlSource("https://mcp.atlassian.com/v1/mcp")
+        assert source.validate() is True
+
+    def test_validate_http_url(self):
+        """Test that a valid HTTP URL passes validation."""
+        source = UrlSource("http://localhost:8080/mcp")
+        assert source.validate() is True
+
+    def test_validate_invalid_url(self):
+        """Test that a non-URL string fails validation."""
+        source = UrlSource("not-a-url")
+        assert source.validate() is False
+
+    def test_derive_name(self):
+        """Test name derivation from URL."""
+        name = UrlSource._derive_name("https://mcp.atlassian.com/v1/mcp")
+        assert name  # non-empty
+        assert "/" not in name  # filesystem-safe
+
+    @pytest.mark.asyncio
+    async def test_fetch_and_install_creates_workspace(self, tmp_path):
+        """Test that fetch_and_install creates a placeholder workspace."""
+        source = UrlSource("https://mcp.example.com/mcp")
+        workspace = await source.fetch_and_install(tmp_path)
+
+        assert workspace.exists()
+        assert (workspace / "mcp_url.txt").exists()
+        assert (workspace / "mcp_url.txt").read_text() == "https://mcp.example.com/mcp"
+
+    @pytest.mark.asyncio
+    async def test_fetch_and_install_auth_placeholder(self, tmp_path):
+        """Test that auth_configured.txt is written when auth_token is set."""
+        source = UrlSource("https://mcp.example.com/mcp", auth_token="secret")
+        workspace = await source.fetch_and_install(tmp_path)
+
+        assert (workspace / "auth_configured.txt").exists()
+        # The actual token must NOT be written to disk
+        content = (workspace / "auth_configured.txt").read_text()
+        assert "secret" not in content
+
+    def test_cleanup(self, tmp_path):
+        """Test cleanup removes the workspace directory."""
+        from src.installer.mcp_source import MCPConfig
+        source = UrlSource("https://mcp.example.com/mcp")
+        workspace = tmp_path / "test-workspace"
+        workspace.mkdir()
+        source.config.workspace_path = workspace
+
+        source.cleanup()
+        assert not workspace.exists()

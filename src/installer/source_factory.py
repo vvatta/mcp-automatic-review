@@ -11,6 +11,7 @@ from src.installer.local_source import LocalSource
 from src.installer.github_source import GitHubSource
 from src.installer.npm_source import NpmSource
 from src.installer.pypi_source import PyPiSource
+from src.installer.url_source import UrlSource
 
 
 class MCPSourceFactory:
@@ -22,6 +23,7 @@ class MCPSourceFactory:
     - GitHub: https://github.com/owner/repo or owner/repo
     - npm: npm:package-name or package-name@version
     - PyPI: pypi:package-name or package-name==version
+    - URL: url:https://... or any non-GitHub http(s):// URL
     """
 
     # Patterns for source detection
@@ -29,6 +31,8 @@ class MCPSourceFactory:
     GITHUB_SHORT_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$")
     NPM_PREFIX_PATTERN = re.compile(r"^npm:")
     PYPI_PREFIX_PATTERN = re.compile(r"^pypi:")
+    URL_PREFIX_PATTERN = re.compile(r"^url:")
+    REMOTE_URL_PATTERN = re.compile(r"^https?://", re.IGNORECASE)
     NPM_VERSION_PATTERN = re.compile(r"@[\d\w\.\-]+$")
     PYPI_VERSION_PATTERN = re.compile(r"[=<>!]+[\d\w\.\-]+$")
 
@@ -41,17 +45,19 @@ class MCPSourceFactory:
         ref: Optional[str] = None,
         command: Optional[str] = None,
         args: Optional[list[str]] = None,
+        auth_token: Optional[str] = None,
     ) -> MCPSource:
         """
         Create appropriate MCP source from reference string.
 
         Args:
             reference: Source reference (path, URL, package name)
-            source_type: Optional explicit source type (local, github, npm, pypi)
+            source_type: Optional explicit source type (local, github, npm, pypi, url)
             version: Optional version specification
             ref: Optional git reference (branch/tag/commit) for GitHub
             command: Optional command to execute the MCP server
             args: Optional arguments for the command
+            auth_token: Optional API token for remote/URL MCP servers
 
         Returns:
             MCPSource instance
@@ -61,14 +67,21 @@ class MCPSourceFactory:
         """
         # If source_type is explicitly provided, use it
         if source_type:
-            return cls._create_by_type(source_type, reference, version, ref, command, args)
+            return cls._create_by_type(source_type, reference, version, ref, command, args, auth_token)
 
         # Auto-detect source type
-        return cls._auto_detect_source(reference, version, ref, command, args)
+        return cls._auto_detect_source(reference, version, ref, command, args, auth_token)
 
     @classmethod
     def _create_by_type(
-        cls, source_type: str, reference: str, version: Optional[str], ref: Optional[str], command: Optional[str], args: Optional[list[str]]
+        cls,
+        source_type: str,
+        reference: str,
+        version: Optional[str],
+        ref: Optional[str],
+        command: Optional[str],
+        args: Optional[list[str]],
+        auth_token: Optional[str] = None,
     ) -> MCPSource:
         """Create source by explicit type."""
         source_type = source_type.lower()
@@ -81,16 +94,28 @@ class MCPSourceFactory:
             return NpmSource(reference, version=version, command=command, args=args)
         elif source_type == "pypi":
             return PyPiSource(reference, version=version, command=command, args=args)
+        elif source_type == "url":
+            return UrlSource(reference, auth_token=auth_token)
         else:
             raise ValueError(f"Unknown source type: {source_type}")
 
     @classmethod
     def _auto_detect_source(
-        cls, reference: str, version: Optional[str], ref: Optional[str], command: Optional[str], args: Optional[list[str]]
+        cls,
+        reference: str,
+        version: Optional[str],
+        ref: Optional[str],
+        command: Optional[str],
+        args: Optional[list[str]],
+        auth_token: Optional[str] = None,
     ) -> MCPSource:
         """Auto-detect source type from reference string."""
 
-        # Check for explicit prefixes
+        # Check for explicit 'url:' prefix (highest priority for remote servers)
+        if cls.URL_PREFIX_PATTERN.match(reference):
+            return UrlSource(reference, auth_token=auth_token)
+
+        # Check for explicit npm/pypi prefixes
         if cls.NPM_PREFIX_PATTERN.match(reference):
             package_name = reference[4:]  # Remove 'npm:' prefix
             return NpmSource(package_name, version=version, command=command, args=args)
@@ -99,9 +124,13 @@ class MCPSourceFactory:
             package_name = reference[5:]  # Remove 'pypi:' prefix
             return PyPiSource(package_name, version=version, command=command, args=args)
 
-        # Check for GitHub patterns
+        # Check for GitHub URL pattern first
         if cls.GITHUB_URL_PATTERN.match(reference):
             return GitHubSource(reference, ref=ref, version=version, command=command, args=args)
+
+        # Check for any other HTTP/HTTPS URL (non-GitHub remote MCP server)
+        if cls.REMOTE_URL_PATTERN.match(reference):
+            return UrlSource(reference, auth_token=auth_token)
 
         if cls.GITHUB_SHORT_PATTERN.match(reference) and "/" in reference:
             # Could be GitHub short reference, but verify it's not a local path

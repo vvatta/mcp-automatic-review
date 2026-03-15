@@ -34,6 +34,7 @@ def parse_config_file(config_path: str) -> Dict[str, Optional[str]]:
         "source_type": None,
         "server_url": None,
         "anthropic_key": None,
+        "auth_token": None,
     }
 
     with open(config_path, "r") as f:

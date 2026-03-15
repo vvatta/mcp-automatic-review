@@ -17,6 +17,7 @@ class SourceType(str, Enum):
     GITHUB = "github"
     NPM = "npm"
     PYPI = "pypi"
+    URL = "url"
 
 
 @dataclass
@@ -31,6 +32,7 @@ class MCPConfig:
     workspace_path: Optional[Path] = None  # Local path after installation
     command: Optional[str] = None  # Command to execute the MCP server (e.g., "npx", "node", "python")
     args: Optional[list[str]] = None  # Arguments to pass to the command
+    auth_token: Optional[str] = None  # Authentication token for remote MCP servers
 
 
 class MCPSource(ABC):
